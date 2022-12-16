@@ -1,13 +1,44 @@
+import string
 import pandas as pd
+import warnings
+from tqdm import tqdm
 from nltk.sentiment import SentimentIntensityAnalyzer
+from nltk.stem import WordNetLemmatizer
+from nltk.corpus import stopwords
 
+warnings.filterwarnings("ignore", category=FutureWarning) 
 
-df = pd.read_json('in/politifact_factcheck_data.json', lines=True)
+df = pd.read_json('in/politifact.json', lines=True)
 
-df = df.drop(columns=['statement_originator', 'statement_date', 'statement_source', 'factchecker', 'factcheck_date', 'factcheck_analysis_link'])
+full_corpus = pd.DataFrame(columns=['statement', 'verdict', 'sentiment'])
+redu_corpus = pd.DataFrame(columns=['statement', 'verdict', 'sentiment'])
 
 sia = SentimentIntensityAnalyzer()
+lemmatizer = WordNetLemmatizer()
+stop_words = stopwords.words('english')
 
-df['sentiment'] = df.apply(lambda row: sia.polarity_scores(row['statement'])['compound'], axis=1)
+for _, article in tqdm(df.iterrows()):
+    text = article['statement']
 
-df.to_csv('in/data.csv', index=False)
+    text.lower()
+
+    text = "".join([char for char in text if char not in string.punctuation])
+
+    text = ' '.join([
+        lemmatizer.lemmatize(word) for word in text.split(" ") if word not in stop_words
+    ])
+
+    verdict = article['verdict']
+
+    sentiment = sia.polarity_scores(text)['compound']
+
+    processed_article = {'statement': text, 'verdict': verdict, 'sentiment': sentiment}
+
+    full_corpus = full_corpus.append(processed_article, ignore_index=True)
+
+    if article['verdict'] not in ['half-true', 'mostly-false']:
+        article['verdict'] = 'true' if verdict in ['true', 'mostly-true'] else 'false'
+        redu_corpus = redu_corpus.append(processed_article, ignore_index=True)
+
+full_corpus.to_csv('in/full_corpus.csv', index=False)
+redu_corpus.to_csv('in/reduced_corpus.csv', index=False)
